@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>NEON DASH | النسخة الاحترافية</title>
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
+    <style>
+        :root {
+            --neon-blue: #00f2ff;
+            --neon-pink: #ff007b;
+            --bg-dark: #0a0a12;
+        }
+
+        body { 
+            margin: 0; 
+            background: var(--bg-dark); 
+            overflow: hidden; 
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            color: white;
+        }
+
+        /* واجهة المستخدم الاحترافية */
+        #ui-container {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 100;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .hud {
+            width: 90%;
+            margin-top: 40px;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+        }
+
+        .score-card {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 10px 25px;
+            border-radius: 15px;
+            text-align: center;
+        }
+
+        #current-score { font-size: 45px; font-weight: 900; color: var(--neon-blue); line-height: 1; }
+        #high-score-label { font-size: 12px; text-transform: uppercase; letter-spacing: 2px; opacity: 0.7; }
+        #high-score-val { font-size: 20px; font-weight: bold; color: var(--neon-pink); }
+
+        /* الشاشات المركزية (البداية والنهاية) */
+        .modal {
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(15, 15, 25, 0.9);
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--neon-blue);
+            padding: 40px;
+            border-radius: 30px;
+            text-align: center;
+            pointer-events: all;
+            box-shadow: 0 0 50px rgba(0, 242, 255, 0.2);
+            min-width: 280px;
+        }
+
+        .hidden { display: none; }
+
+        h1 { margin: 0; font-size: 2.5rem; letter-spacing: 5px; color: var(--neon-blue); text-shadow: 0 0 10px var(--neon-blue); }
+        
+        .btn-main {
+            background: transparent;
+            color: var(--neon-blue);
+            border: 2px solid var(--neon-blue);
+            padding: 15px 45px;
+            font-size: 1.2rem;
+            font-weight: bold;
+            border-radius: 50px;
+            cursor: pointer;
+            margin-top: 30px;
+            transition: all 0.3s;
+            text-transform: uppercase;
+        }
+
+        .btn-main:hover {
+            background: var(--neon-blue);
+            color: black;
+            box-shadow: 0 0 20px var(--neon-blue);
+        }
+    </style>
+</head>
+<body>
+
+<div id="ui-container">
+    <div class="hud">
+        <div class="score-card">
+            <div id="current-score">0</div>
+            <div style="font-size: 10px; opacity: 0.8;">النقاط</div>
+        </div>
+        <div class="score-card">
+            <div id="high-score-label">أفضل نتيجة</div>
+            <div id="high-score-val">0</div>
+        </div>
+    </div>
+
+    <div id="start-screen" class="modal">
+        <h1>NEON DASH</h1>
+        <p style="opacity: 0.6; margin-top: 10px;">تجنب العوائق • حقق الرقم القياسي</p>
+        <button class="btn-main" onclick="startPlay()">بدء اللعب</button>
+    </div>
+
+    <div id="game-over-screen" class="modal hidden">
+        <h2 style="color: var(--neon-pink); font-size: 2rem;">انتهت اللعبة</h2>
+        <div id="final-score-display" style="font-size: 1.5rem; margin: 20px 0;">0</div>
+        <button class="btn-main" onclick="location.reload()">إعادة المحاولة</button>
+    </div>
+</div>
+
+<div id="phaser-game"></div>
+
+<script>
+const config = {
+    type: Phaser.AUTO,
+    width: 450, height: 800,
+    parent: 'phaser-game',
+    transparent: true,
+    physics: { default: 'arcade', arcade: { gravity: { y: 1400 }, debug: false } },
+    scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
+    scene: { preload, create, update }
+};
+
+let game = new Phaser.Game(config);
+let hero, obstacles, isGameActive = false;
+let currentScore = 0;
+let highScore = localStorage.getItem('neonDashBest') || 0;
+
+// تحديث الواجهة عند التحميل
+document.getElementById('high-score-val').innerText = highScore;
+
+function preload() {
+    this.load.on('complete', () => {
+        const g = this.make.graphics({x: 0, y: 0, add: false});
+
+        // اللاعب (Cyber Hero)
+        g.fillStyle(0x00f2ff); 
+        g.fillRoundedRect(0, 0, 40, 25, 8);
+        g.fillStyle(0xffffff); g.fillCircle(32, 12, 4); // العين
+        g.generateTexture('hero', 40, 25);
+
+        // العوائق (Neon Pillars)
+        g.clear();
+        g.fillGradientStyle(0x5500ff, 0x5500ff, 0xff007b, 0xff007b);
+        g.fillRect(0, 0, 80, 600);
+        g.lineStyle(3, 0x00f2ff, 1);
+        g.strokeRect(2, 2, 76, 596);
+        g.generateTexture('pillar', 80, 600);
+
+        // جزيئات الخلفية
+        g.clear(); g.fillStyle(0xffffff, 0.4); g.fillCircle(2, 2, 2);
+        g.generateTexture('dot', 4, 4);
+    });
+    this.load.start();
+}
+
+function create() {
+    // نجوم الخلفية (Parallax)
+    this.add.particles(0, 0, 'dot', {
+        x: { min: 0, max: 450 }, y: { min: 0, max: 800 },
+        speedX: -20, lifespan: 10000, quantity: 0.5, scale: { start: 1, end: 0 }
+    });
+
+    hero = this.physics.add.sprite(100, 400, 'hero');
+    hero.setCircle(12, 8, 2);
+    hero.body.allowGravity = false;
+    hero.setDepth(10);
+
+    // تأثير اللهب خلف اللاعب
+    this.add.particles(0, 0, 'dot', {
+        follow: hero, followOffset: { x: -20, y: 0 },
+        scale: { start: 2, end: 0 }, speed: 40,
+        tint: 0x00f2ff, lifespan: 300, frequency: 50
+    });
+
+    obstacles = this.physics.add.group();
+    this.physics.add.collider(hero, obstacles, onHit, null, this);
+    this.input.on('pointerdown', doJump);
+}
+
+function update() {
+    if (!isGameActive) return;
+
+    // دوران انسيابي
+    hero.angle = Phaser.Math.Clamp(hero.body.velocity.y * 0.08, -20, 30);
+
+    obstacles.getChildren().forEach(p => {
+        if (p.x < -100) {
+            if (!p.scored && p.y < 0) { // نحسب النقطة من الأنبوب العلوي فقط
+                p.scored = true;
+                currentScore++;
+                updateUI();
+            }
+            p.destroy();
+        }
+    });
+
+    if (hero.y > 800 || hero.y < 0) onHit.call(this);
+}
+
+function startPlay() {
+    document.getElementById('start-screen').classList.add('hidden');
+    isGameActive = true;
+    hero.body.allowGravity = true;
+    
+    game.scene.scenes[0].time.addEvent({
+        delay: 1500, callback: spawnObstacles, callbackScope: game.scene.scenes[0], loop: true
+    });
+}
+
+function doJump() {
+    if (!isGameActive) return;
+    hero.setVelocityY(-460);
+}
+
+function spawnObstacles() {
+    if (!isGameActive) return;
+    const gap = 210;
+    const spawnY = Phaser.Math.Between(180, 520);
+    
+    const top = obstacles.create(550, spawnY - gap/2 - 300, 'pillar');
+    const bot = obstacles.create(550, spawnY + gap/2 + 300, 'pillar');
+
+    [top, bot].forEach(p => {
+        p.body.allowGravity = false;
+        p.setVelocityX(-260);
+        p.scored = false;
+    });
+}
+
+function updateUI() {
+    document.getElementById('current-score').innerText = currentScore;
+    if (currentScore > highScore) {
+        highScore = currentScore;
+        document.getElementById('high-score-val').innerText = highScore;
+        localStorage.setItem('neonDashBest', highScore);
+    }
+}
+
+function onHit() {
+    if (!isGameActive) return;
+    isGameActive = false;
+    this.physics.pause();
+    this.cameras.main.shake(300, 0.02);
+    hero.setTint(0xff0000);
+
+    document.getElementById('final-score-display').innerText = `نقاطك: ${currentScore}`;
+    document.getElementById('game-over-screen').classList.remove('hidden');
+}
+</script>
+</body>
+</html>
